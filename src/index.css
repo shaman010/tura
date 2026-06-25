@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+[data-theme='dark'] {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+
+  /* Тёмная тема (по умолчанию). RGB-тройки для rgb(var(--x)/alpha). */
+  --base: 5 5 5;
+  --card: 22 22 24;
+  --surface: 26 26 29;
+  --night: 17 17 19;
+  --ink: 255 255 255;
+  --muted: 154 154 161;
+  --line: rgba(255, 255, 255, 0.08);
+
+  --glass-bg: rgba(15, 15, 17, 0.78);
+  --glass2-bg: rgba(20, 20, 22, 0.72);
+  --cardface: rgba(255, 255, 255, 0.04);
+  --app-bg: #000000;
+}
+
+[data-theme='light'] {
+  --base: 245 246 248;
+  --card: 255 255 255;
+  --surface: 235 237 240;
+  --night: 255 255 255;
+  --ink: 14 15 18;
+  --muted: 99 102 110;
+  --line: rgba(10, 12, 20, 0.1);
+
+  --glass-bg: rgba(255, 255, 255, 0.74);
+  --glass2-bg: rgba(255, 255, 255, 0.8);
+  --cardface: rgba(10, 12, 20, 0.035);
+  --app-bg: #e9ebef;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: rgb(var(--ink));
+  background: var(--app-bg);
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+/* The whole app lives inside a centered phone-width frame on desktop,
+   and fills the viewport on real mobile. */
+#root {
+  display: flex;
+  justify-content: center;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .glass {
+    background: var(--glass2-bg);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid var(--line);
+  }
+  .glass-dark {
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+  }
+  .card {
+    background: var(--cardface);
+    border: 1px solid var(--line);
+  }
+  /* Контейнеры с медиа (видео-лента, фуллскрин) — всегда тёмные в обеих темах.
+     Текст внутри остаётся белым независимо от темы. */
+  .media-dark {
+    --ink: 255 255 255;
+    --muted: 200 200 205;
+    color: #fff;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

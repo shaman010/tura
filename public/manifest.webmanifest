@@ -1,0 +1,13 @@
+{
+  "name": "Swipd — лента вдохновения",
+  "short_name": "Swipd",
+  "description": "Свайпай. Сохраняй. Покупай. Без переписок.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EA6A2A",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
