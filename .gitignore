@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-local
+dist-local-run
+.vite
+*.log
+*.out
+*.err
+.DS_Store
+.env
+.env.local
+.env.*.local
+swipe.rar
+local_spa_server.py

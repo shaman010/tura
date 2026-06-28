@@ -1,5 +1,32 @@
 # Swipd Admin Setup
 
+## Cloudflare status
+
+Admin now uses Vercel API `/api/cms` for Cloudflare D1. If Cloudflare env variables are missing, the app falls back to localStorage so the site does not break.
+
+The D1 migration `migrations/0001_initial_schema.sql` was applied to `tura-db` on 2026-06-27.
+
+Add these variables in Vercel Project Settings -> Environments -> Production:
+
+```text
+ADMIN_PASSWORD=your-admin-password
+CLOUDFLARE_ACCOUNT_ID=f03e97a0947e37d72134e0e141809c63
+CLOUDFLARE_D1_DATABASE_ID=7b493aaf-2b24-4c9a-a9f2-fa40d707f977
+CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
+R2_BUCKET_NAME=tura-media
+R2_PUBLIC_BASE_URL=https://pub-8d6870a83bda4583adf06997fffda81b.r2.dev
+```
+
+For direct file upload from admin to R2, also add:
+
+```text
+R2_ACCOUNT_ID=f03e97a0947e37d72134e0e141809c63
+R2_ACCESS_KEY_ID=your-r2-access-key-id
+R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+```
+
+Do not commit real tokens, passwords, or R2 secret keys to GitHub.
+
 ## Текущий MVP-режим
 
 Админка уже доступна по адресу:
