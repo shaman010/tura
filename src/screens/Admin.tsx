@@ -21,6 +21,7 @@ import {
 import { tenge } from '../lib/format'
 
 const SESSION_KEY = 'swipd-admin-session'
+const TOKEN_KEY = 'swipd-admin-token'
 const tabs: { id: AdminSection; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'products', label: 'Товары' },
@@ -68,6 +69,7 @@ export function Admin() {
           <button
             onClick={() => {
               localStorage.removeItem(SESSION_KEY)
+              localStorage.removeItem(TOKEN_KEY)
               setAuthed(false)
             }}
             className="mt-6 w-full rounded-2xl border border-ink/15 px-4 py-3 text-sm font-bold"
@@ -121,7 +123,9 @@ function AdminLogin({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({ password }),
       })
       if (!res.ok) throw new Error('Неверный пароль')
+      const data = await res.json()
       localStorage.setItem(SESSION_KEY, 'ok')
+      if (data.token) localStorage.setItem(TOKEN_KEY, data.token)
       onDone()
     } catch {
       setError('Не удалось войти. Проверьте ADMIN_PASSWORD на Vercel.')
@@ -310,8 +314,35 @@ function Media({ notify }: { notify: (msg: string) => void }) {
   const cms = useCmsData()
   const [url, setUrl] = useState('')
   const [type, setType] = useState<'image' | 'video'>('image')
+  const [uploading, setUploading] = useState(false)
+  const upload = async (file: File) => {
+    setUploading(true)
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}` },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type, base64 }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.url) throw new Error(data.error || 'Upload failed')
+      addMedia(data.url, file.type.startsWith('video/') ? 'video' : 'image', file.name)
+      await navigator.clipboard?.writeText(data.url)
+      notify('Файл загружен, URL скопирован')
+    } catch {
+      notify('Не удалось загрузить файл. Проверьте R2 ключи в Vercel.')
+    } finally {
+      setUploading(false)
+    }
+  }
   return <div className="space-y-4">
-    <Panel title="Добавить media URL"><div className="grid gap-3 md:grid-cols-[1fr_160px_140px]"><Field label="URL из R2/CDN" value={url} onChange={setUrl} /><Select label="Type" value={type} onChange={(v) => setType(v as any)} options={[['image','image'],['video','video']]} /><button onClick={() => { addMedia(url, type); setUrl(''); notify('Media URL добавлен') }} disabled={!url} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">Добавить</button></div><p className="mt-3 text-xs text-muted">Upload в R2 делается через защищенный endpoint /api/admin/upload. Пока можно вставлять public URL вручную.</p></Panel>
+    <Panel title="Загрузить в R2"><div className="grid gap-3 md:grid-cols-[1fr_180px]"><label className="block"><span className="mb-1 block text-xs font-bold text-muted">Фото / короткое видео</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file) }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label><button disabled={uploading} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">{uploading ? 'Загружаем...' : 'R2 upload'}</button></div><p className="mt-3 text-xs text-muted">Через Vercel upload подходит для изображений до 4MB. Большие видео пока лучше загрузить в R2 вручную и вставить public URL ниже.</p></Panel>
+    <Panel title="Добавить media URL"><div className="grid gap-3 md:grid-cols-[1fr_160px_140px]"><Field label="URL из R2/CDN" value={url} onChange={setUrl} /><Select label="Type" value={type} onChange={(v) => setType(v as any)} options={[['image','image'],['video','video']]} /><button onClick={() => { addMedia(url, type); setUrl(''); notify('Media URL добавлен') }} disabled={!url} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">Добавить</button></div></Panel>
     <Table headers={['Name', 'Type', 'URL']}>{cms.media.map((m) => <tr key={m.id}><Td>{m.name}</Td><Td>{m.type}</Td><Td><button onClick={() => navigator.clipboard?.writeText(m.url)} className="text-left text-magenta">{m.url}</button></Td></tr>)}</Table>
   </div>
 }

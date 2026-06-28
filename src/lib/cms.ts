@@ -107,6 +107,8 @@ export interface CmsState {
 
 const KEY = 'swipd-cms-state-v1'
 const EVENT = 'swipd-cms-updated'
+const ADMIN_SESSION_KEY = 'swipd-admin-session'
+const ADMIN_TOKEN_KEY = 'swipd-admin-token'
 
 export const emptyCmsState = (): CmsState => ({
   sellers: [],
@@ -155,6 +157,62 @@ export function saveCmsState(next: CmsState) {
   window.dispatchEvent(new CustomEvent(EVENT))
 }
 
+function adminHeaders() {
+  const token = localStorage.getItem(ADMIN_TOKEN_KEY)
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function applyRemoteState(state: CmsState) {
+  saveCmsState(state)
+  return state
+}
+
+async function requestCms(method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown) {
+  const res = await fetch('/api/cms', {
+    method,
+    headers: { 'Content-Type': 'application/json', ...adminHeaders() } as HeadersInit,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error('CMS API request failed')
+  return res.json()
+}
+
+export async function refreshCmsFromApi() {
+  try {
+    const state = (await requestCms('GET')) as CmsState
+    return applyRemoteState(state)
+  } catch {
+    return loadCmsState()
+  }
+}
+
+async function pushCmsItem(resource: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, item: unknown) {
+  try {
+    const data = await requestCms('POST', { resource, item })
+    if (data.state) await applyRemoteState(data.state)
+  } catch {
+    window.dispatchEvent(new CustomEvent(EVENT))
+  }
+}
+
+async function deleteCmsItem(resource: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, id: string) {
+  try {
+    const data = await requestCms('DELETE', { resource, id })
+    if (data.state) await applyRemoteState(data.state)
+  } catch {
+    window.dispatchEvent(new CustomEvent(EVENT))
+  }
+}
+
+async function pushLeadStatus(id: string, status: CmsLead['status']) {
+  try {
+    const data = await requestCms('PUT', { resource: 'leads', item: { id, status } })
+    if (data.state) await applyRemoteState(data.state)
+  } catch {
+    window.dispatchEvent(new CustomEvent(EVENT))
+  }
+}
+
 export function updateCmsState(mutator: (state: CmsState) => CmsState) {
   const next = mutator(loadCmsState())
   saveCmsState(next)
@@ -172,6 +230,7 @@ export function useCmsData() {
     return initial
   })
   useEffect(() => {
+    refreshCmsFromApi().then((next) => setState(next)).catch(() => {})
     const refresh = () => {
       const next = loadCmsState()
       syncRuntime(next)
@@ -193,7 +252,8 @@ export function useRuntimeCatalog() {
 }
 
 export function upsertSeller(input: Partial<CmsSeller> & { name: string; slug?: string }) {
-  return updateCmsState((state) => {
+  let saved: CmsSeller | null = null
+  const next = updateCmsState((state) => {
     const existing = input.id ? state.sellers.find((seller) => seller.id === input.id) : undefined
     const stamp = now()
     const seller: CmsSeller = {
@@ -211,12 +271,16 @@ export function upsertSeller(input: Partial<CmsSeller> & { name: string; slug?: 
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
+    saved = seller
     return { ...state, sellers: [seller, ...state.sellers.filter((item) => item.id !== seller.id)] }
   })
+  if (saved) void pushCmsItem('sellers', saved)
+  return next
 }
 
 export function upsertCategory(input: Partial<CmsCategory> & { name: string; slug?: string }) {
-  return updateCmsState((state) => {
+  let saved: CmsCategory | null = null
+  const next = updateCmsState((state) => {
     const existing = input.id ? state.categories.find((category) => category.id === input.id) : undefined
     const stamp = now()
     const category: CmsCategory = {
@@ -229,12 +293,16 @@ export function upsertCategory(input: Partial<CmsCategory> & { name: string; slu
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
+    saved = category
     return { ...state, categories: [category, ...state.categories.filter((item) => item.id !== category.id)] }
   })
+  if (saved) void pushCmsItem('categories', saved)
+  return next
 }
 
 export function upsertProduct(input: Partial<CmsProduct> & { title: string; sellerId: string; categoryId: string }) {
-  return updateCmsState((state) => {
+  let saved: CmsProduct | null = null
+  const next = updateCmsState((state) => {
     const existing = input.id ? state.products.find((product) => product.id === input.id) : undefined
     const stamp = now()
     const product: CmsProduct = {
@@ -260,12 +328,16 @@ export function upsertProduct(input: Partial<CmsProduct> & { title: string; sell
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
+    saved = product
     return { ...state, products: [product, ...state.products.filter((item) => item.id !== product.id)] }
   })
+  if (saved) void pushCmsItem('products', saved)
+  return next
 }
 
 export function upsertFeedItem(input: Partial<CmsFeedItem> & { productId: string; mediaUrl: string }) {
-  return updateCmsState((state) => {
+  let saved: CmsFeedItem | null = null
+  const next = updateCmsState((state) => {
     const existing = input.id ? state.feedItems.find((item) => item.id === input.id) : undefined
     const product = state.products.find((item) => item.id === input.productId)
     const stamp = now()
@@ -285,26 +357,34 @@ export function upsertFeedItem(input: Partial<CmsFeedItem> & { productId: string
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
+    saved = feedItem
     return { ...state, feedItems: [feedItem, ...state.feedItems.filter((item) => item.id !== feedItem.id)] }
   })
+  if (saved) void pushCmsItem('feedItems', saved)
+  return next
 }
 
 export function removeCmsItem(collection: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, id: string) {
-  return updateCmsState((state) => ({ ...state, [collection]: (state[collection] as { id: string }[]).filter((item) => item.id !== id) }))
+  const next = updateCmsState((state) => ({ ...state, [collection]: (state[collection] as { id: string }[]).filter((item) => item.id !== id) }))
+  void deleteCmsItem(collection, id)
+  return next
 }
 
 export function createCmsLead(input: Omit<CmsLead, 'id' | 'createdAt' | 'updatedAt' | 'status'> & { status?: CmsLead['status'] }) {
   const stamp = now()
   const lead: CmsLead = { id: makeId('lead'), status: input.status ?? 'new', createdAt: stamp, updatedAt: stamp, ...input }
   updateCmsState((state) => ({ ...state, leads: [lead, ...state.leads] }))
+  void pushCmsItem('leads', lead)
   return lead
 }
 
 export function updateLeadStatus(id: string, status: CmsLead['status']) {
-  return updateCmsState((state) => ({
+  const next = updateCmsState((state) => ({
     ...state,
     leads: state.leads.map((lead) => (lead.id === id ? { ...lead, status, updatedAt: now() } : lead)),
   }))
+  void pushLeadStatus(id, status)
+  return next
 }
 
 export function addMedia(url: string, type: 'image' | 'video', name = '') {
