@@ -33,6 +33,23 @@ const tabs: { id: AdminSection; label: string }[] = [
   { id: 'settings', label: 'Настройки' },
 ]
 
+async function uploadFileToR2(file: File) {
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+  const res = await fetch('/api/admin/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}` },
+    body: JSON.stringify({ fileName: file.name, contentType: file.type, base64 }),
+  })
+  const data = await res.json()
+  if (!res.ok || !data.url) throw new Error(data.error || 'Upload failed')
+  return String(data.url)
+}
+
 export function Admin() {
   const [authed, setAuthed] = useState(() => localStorage.getItem(SESSION_KEY) === 'ok')
   const [active, setActive] = useState<AdminSection>('dashboard')
@@ -248,6 +265,7 @@ function Products({ notify }: { notify: (msg: string) => void }) {
 
 function ProductForm({ initial, onClose, onSaved }: { initial: Partial<CmsProduct>; onClose: () => void; onSaved: () => void }) {
   const cms = useCmsData()
+  const [uploading, setUploading] = useState('')
   const [form, setForm] = useState({
     title: initial.title ?? '', slug: initial.slug ?? '', sellerId: initial.sellerId ?? '', categoryId: initial.categoryId ?? '',
     description: initial.description ?? '', price: String(initial.price ?? ''), oldPrice: String(initial.oldPrice ?? ''),
@@ -257,6 +275,16 @@ function ProductForm({ initial, onClose, onSaved }: { initial: Partial<CmsProduc
     inStock: initial.inStock ?? true, sortOrder: String(initial.sortOrder ?? 0),
   })
   const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
+  const uploadInto = async (file: File, field: 'coverUrl' | 'videoUrl' | 'gallery') => {
+    setUploading(field)
+    try {
+      const uploadedUrl = await uploadFileToR2(file)
+      if (field === 'gallery') set('gallery', [form.gallery, uploadedUrl].filter(Boolean).join('\n'))
+      else set(field, uploadedUrl)
+    } finally {
+      setUploading('')
+    }
+  }
   const colors = form.colors.split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const [name, hex] = x.split(':'); return { name: name || 'Color', hex: hex || '#999999' } })
   return <Modal title="Товар" onClose={onClose} wide><div className="grid gap-3 md:grid-cols-2">
     <Field label="Название" value={form.title} onChange={(v) => set('title', v)} />
@@ -269,10 +297,11 @@ function ProductForm({ initial, onClose, onSaved }: { initial: Partial<CmsProduc
     <Field label="Размеры через запятую" value={form.sizes} onChange={(v) => set('sizes', v)} />
     <Field label="Теги" value={form.tags} onChange={(v) => set('tags', v)} />
     <Field label="Style tags" value={form.styleTags} onChange={(v) => set('styleTags', v)} />
-    <Field label="Cover image URL" value={form.coverUrl} onChange={(v) => set('coverUrl', v)} />
-    <Field label="Video URL" value={form.videoUrl} onChange={(v) => set('videoUrl', v)} />
+    <UploadField label="Cover image" value={form.coverUrl} accept="image/jpeg,image/png,image/webp" uploading={uploading === 'coverUrl'} onUrlChange={(v) => set('coverUrl', v)} onFile={(file) => uploadInto(file, 'coverUrl')} />
+    <UploadField label="Video" value={form.videoUrl} accept="video/mp4,video/quicktime" uploading={uploading === 'videoUrl'} onUrlChange={(v) => set('videoUrl', v)} onFile={(file) => uploadInto(file, 'videoUrl')} />
     <TextArea label="Описание" value={form.description} onChange={(v) => set('description', v)} />
     <TextArea label="Галерея фото, по одному URL на строку" value={form.gallery} onChange={(v) => set('gallery', v)} />
+    <label className="block md:col-span-2"><span className="mb-1 block text-xs font-bold text-muted">Добавить фото в галерею</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadInto(file, 'gallery') }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" />{uploading === 'gallery' && <span className="mt-1 block text-xs text-magenta">Загружаем...</span>}</label>
     <Select label="Статус" value={form.status} onChange={(v) => set('status', v)} options={[['draft','draft'],['published','published'],['archived','archived']]} />
     <Field label="Sort order" value={form.sortOrder} onChange={(v) => set('sortOrder', v)} type="number" />
     <Toggle label="В наличии" value={form.inStock} onChange={(v) => set('inStock', v)} />
@@ -291,11 +320,22 @@ function FeedItems({ notify }: { notify: (msg: string) => void }) {
 function FeedForm({ initial, onClose, onSaved }: { initial: Partial<CmsFeedItem>; onClose: () => void; onSaved: () => void }) {
   const cms = useCmsData()
   const [form, setForm] = useState({ productId: initial.productId ?? '', type: initial.type ?? 'image', mediaUrl: initial.mediaUrl ?? '', title: initial.title ?? '', subtitle: initial.subtitle ?? '', sortOrder: String(initial.sortOrder ?? 0), isActive: initial.isActive ?? true })
+  const [uploading, setUploading] = useState(false)
   const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
+  const uploadMedia = async (file: File) => {
+    setUploading(true)
+    try {
+      const uploadedUrl = await uploadFileToR2(file)
+      set('mediaUrl', uploadedUrl)
+      set('type', file.type.startsWith('video/') ? 'video' : 'image')
+    } finally {
+      setUploading(false)
+    }
+  }
   return <Modal title="Feed item" onClose={onClose}><div className="grid gap-3 md:grid-cols-2">
     <Select label="Product" value={form.productId} onChange={(v) => set('productId', v)} options={cms.products.map((p) => [p.id, p.title])} />
     <Select label="Type" value={form.type} onChange={(v) => set('type', v)} options={[['image','image'],['video','video']]} />
-    <Field label="Media URL" value={form.mediaUrl} onChange={(v) => set('mediaUrl', v)} />
+    <UploadField label="Media" value={form.mediaUrl} accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" uploading={uploading} onUrlChange={(v) => set('mediaUrl', v)} onFile={uploadMedia} />
     <Field label="Title" value={form.title} onChange={(v) => set('title', v)} />
     <Field label="Subtitle" value={form.subtitle} onChange={(v) => set('subtitle', v)} />
     <Field label="Sort order" value={form.sortOrder} onChange={(v) => set('sortOrder', v)} type="number" />
@@ -364,6 +404,7 @@ function Td({ children }: { children: React.ReactNode }) { return <td className=
 function RowActions({ onEdit, onDelete, link }: { onEdit: () => void; onDelete: () => void; link?: string }) { return <div className="flex gap-2"><button onClick={onEdit} className="rounded-xl bg-surface px-3 py-1 font-bold">Edit</button>{link && <a href={link} className="rounded-xl bg-surface px-3 py-1 font-bold">Open</a>}<button onClick={() => confirm('Удалить?') && onDelete()} className="rounded-xl bg-magenta/15 px-3 py-1 font-bold text-magenta">Delete</button></div> }
 function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) { return <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/70 p-4"><div className={`max-h-[90dvh] w-full overflow-y-auto rounded-[28px] bg-[#121216] p-5 shadow-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}><div className="mb-4 flex items-center justify-between"><h3 className="text-xl font-extrabold">{title}</h3><button onClick={onClose} className="rounded-full bg-surface p-2"><Icon name="close" /></button></div>{children}</div></div> }
 function Field({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) { return <label className="block"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><input value={value} type={type} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-11 w-full rounded-2xl bg-surface px-3 outline-none focus:ring-2 focus:ring-magenta/40" /></label> }
+function UploadField({ label, value, accept, uploading, onUrlChange, onFile }: { label: string; value: string; accept: string; uploading: boolean; onUrlChange: (v: string) => void; onFile: (file: File) => void }) { return <div className="block"><Field label={`${label} URL`} value={value} onChange={onUrlChange} /><label className="mt-2 block"><span className="mb-1 block text-xs font-bold text-muted">Загрузить {label}</span><input type="file" accept={accept} onChange={(e) => { const file = e.target.files?.[0]; if (file) onFile(file) }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label>{uploading && <span className="mt-1 block text-xs text-magenta">Загружаем...</span>}</div> }
 function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) { return <label className="block md:col-span-2"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} className="min-h-[100px] w-full rounded-2xl bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-magenta/40" /></label> }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) { return <label className="block"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-2xl bg-surface px-3 outline-none">{!value && <option value="">Выберите</option>}{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label> }
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <label className="mt-6 flex items-center gap-2 text-sm font-bold"><input checked={value} type="checkbox" onChange={(e) => onChange(e.target.checked)} /> {label}</label> }
