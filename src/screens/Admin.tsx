@@ -34,6 +34,26 @@ const tabs: { id: AdminSection; label: string }[] = [
 ]
 
 async function uploadFileToR2(file: File) {
+  try {
+    const ticketRes = await fetch('/api/admin/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}` },
+      body: JSON.stringify({ fileName: file.name, contentType: file.type, size: file.size }),
+    })
+    const ticket = await ticketRes.json()
+    if (ticketRes.ok && ticket.uploadUrl && ticket.publicUrl) {
+      const uploadRes = await fetch(ticket.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      if (!uploadRes.ok) throw new Error('Direct R2 upload failed')
+      return String(ticket.publicUrl)
+    }
+  } catch {
+    // Fall back to server upload for small files if R2 CORS is not configured yet.
+  }
+
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
@@ -355,6 +375,7 @@ function Media({ notify }: { notify: (msg: string) => void }) {
   const [url, setUrl] = useState('')
   const [type, setType] = useState<'image' | 'video'>('image')
   const [uploading, setUploading] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
   const upload = async (file: File) => {
     setUploading(true)
     try {
@@ -381,7 +402,7 @@ function Media({ notify }: { notify: (msg: string) => void }) {
     }
   }
   return <div className="space-y-4">
-    <Panel title="Загрузить в R2"><div className="grid gap-3 md:grid-cols-[1fr_180px]"><label className="block"><span className="mb-1 block text-xs font-bold text-muted">Фото / короткое видео</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file) }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label><button disabled={uploading} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">{uploading ? 'Загружаем...' : 'R2 upload'}</button></div><p className="mt-3 text-xs text-muted">Через Vercel upload подходит для изображений до 4MB. Большие видео пока лучше загрузить в R2 вручную и вставить public URL ниже.</p></Panel>
+    <Panel title="Загрузить файл в Cloudflare R2"><div className="grid gap-3 md:grid-cols-[1fr_220px]"><label className="block"><span className="mb-1 block text-xs font-bold text-muted">Фото или видео</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label><button onClick={() => file && void upload(file)} disabled={!file || uploading} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">{uploading ? 'Загружаем...' : 'Загрузить в Cloudflare'}</button></div><p className="mt-3 text-xs text-muted">После загрузки URL автоматически добавится в медиатеку и скопируется. Потом его можно выбрать для товара или ленты.</p></Panel>
     <Panel title="Добавить media URL"><div className="grid gap-3 md:grid-cols-[1fr_160px_140px]"><Field label="URL из R2/CDN" value={url} onChange={setUrl} /><Select label="Type" value={type} onChange={(v) => setType(v as any)} options={[['image','image'],['video','video']]} /><button onClick={() => { addMedia(url, type); setUrl(''); notify('Media URL добавлен') }} disabled={!url} className="mt-6 rounded-2xl bg-magenta font-bold disabled:opacity-40">Добавить</button></div></Panel>
     <Table headers={['Name', 'Type', 'URL']}>{cms.media.map((m) => <tr key={m.id}><Td>{m.name}</Td><Td>{m.type}</Td><Td><button onClick={() => navigator.clipboard?.writeText(m.url)} className="text-left text-magenta">{m.url}</button></Td></tr>)}</Table>
   </div>
@@ -404,7 +425,7 @@ function Td({ children }: { children: React.ReactNode }) { return <td className=
 function RowActions({ onEdit, onDelete, link }: { onEdit: () => void; onDelete: () => void; link?: string }) { return <div className="flex gap-2"><button onClick={onEdit} className="rounded-xl bg-surface px-3 py-1 font-bold">Edit</button>{link && <a href={link} className="rounded-xl bg-surface px-3 py-1 font-bold">Open</a>}<button onClick={() => confirm('Удалить?') && onDelete()} className="rounded-xl bg-magenta/15 px-3 py-1 font-bold text-magenta">Delete</button></div> }
 function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) { return <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/70 p-4"><div className={`max-h-[90dvh] w-full overflow-y-auto rounded-[28px] bg-[#121216] p-5 shadow-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}><div className="mb-4 flex items-center justify-between"><h3 className="text-xl font-extrabold">{title}</h3><button onClick={onClose} className="rounded-full bg-surface p-2"><Icon name="close" /></button></div>{children}</div></div> }
 function Field({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) { return <label className="block"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><input value={value} type={type} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-11 w-full rounded-2xl bg-surface px-3 outline-none focus:ring-2 focus:ring-magenta/40" /></label> }
-function UploadField({ label, value, accept, uploading, onUrlChange, onFile }: { label: string; value: string; accept: string; uploading: boolean; onUrlChange: (v: string) => void; onFile: (file: File) => void }) { return <div className="block"><Field label={`${label} URL`} value={value} onChange={onUrlChange} /><label className="mt-2 block"><span className="mb-1 block text-xs font-bold text-muted">Загрузить {label}</span><input type="file" accept={accept} onChange={(e) => { const file = e.target.files?.[0]; if (file) onFile(file) }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label>{uploading && <span className="mt-1 block text-xs text-magenta">Загружаем...</span>}</div> }
+function UploadField({ label, value, accept, uploading, onUrlChange, onFile }: { label: string; value: string; accept: string; uploading: boolean; onUrlChange: (v: string) => void; onFile: (file: File) => void }) { return <div className="block"><Field label={`${label} URL`} value={value} onChange={onUrlChange} /><label className="mt-2 block"><span className="mb-1 block text-xs font-bold text-muted">Загрузить файл в Cloudflare</span><input type="file" accept={accept} onChange={(e) => { const file = e.target.files?.[0]; if (file) onFile(file) }} className="h-11 w-full rounded-2xl bg-surface px-3 py-2 text-sm" /></label>{uploading && <span className="mt-1 block text-xs text-magenta">Загружаем в Cloudflare...</span>}</div> }
 function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) { return <label className="block md:col-span-2"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><textarea value={value} onChange={(e) => onChange(e.target.value)} className="min-h-[100px] w-full rounded-2xl bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-magenta/40" /></label> }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) { return <label className="block"><span className="mb-1 block text-xs font-bold text-muted">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-2xl bg-surface px-3 outline-none">{!value && <option value="">Выберите</option>}{options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label> }
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <label className="mt-6 flex items-center gap-2 text-sm font-bold"><input checked={value} type="checkbox" onChange={(e) => onChange(e.target.checked)} /> {label}</label> }
