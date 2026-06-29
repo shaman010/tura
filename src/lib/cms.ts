@@ -1,5 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FeedItem, Lead, Product, StyleTag } from '../types'
+import type {
+  AgeRangeTag,
+  FeedItem,
+  FitTag,
+  GenderTag,
+  InspirationContentType,
+  InspirationMediaType,
+  InspirationPost,
+  InspirationStatus,
+  Lead,
+  ModerationStatus,
+  OccasionTag,
+  PriceSegment,
+  Product,
+  ProductStatus,
+  SeasonTag,
+  StyleTag,
+  TaggedProduct,
+} from '../types'
 import { setRuntimeData } from './runtimeData'
 
 export type AdminSection =
@@ -14,6 +32,8 @@ export type AdminSection =
 
 export interface CmsSeller {
   id: string
+  ownerUserId: string
+  ownerEmail: string
   name: string
   slug: string
   description: string
@@ -24,6 +44,7 @@ export interface CmsSeller {
   logoUrl: string
   coverUrl: string
   isActive: boolean
+  approvalStatus: 'pending' | 'approved' | 'blocked' | 'hidden'
   createdAt: string
   updatedAt: string
 }
@@ -53,14 +74,96 @@ export interface CmsProduct {
   sizes: string[]
   tags: string[]
   styleTags: StyleTag[]
+  occasionTags: OccasionTag[]
+  ageRangeTags: AgeRangeTag[]
+  gender: GenderTag
+  seasonTags: SeasonTag[]
+  fitTags: FitTag[]
+  priceSegment: PriceSegment | ''
   coverUrl: string
   videoUrl: string
   gallery: string[]
-  status: 'draft' | 'published' | 'archived'
+  status: ProductStatus
   inStock: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
+}
+
+export interface CmsInspirationPost {
+  id: string
+  sellerId: string
+  title: string
+  caption: string
+  contentType: InspirationContentType
+  mediaType: InspirationMediaType
+  mediaUrls: string[]
+  coverUrl: string
+  taggedProducts: TaggedProduct[]
+  styleTags: StyleTag[]
+  occasionTags: OccasionTag[]
+  ageRangeTags: AgeRangeTag[]
+  gender: GenderTag
+  seasonTags: SeasonTag[]
+  isPinned: boolean
+  pinnedOrder: number
+  publishToDiscovery: boolean
+  moderationStatus: ModerationStatus
+  status: InspirationStatus
+  sortOrder: number
+  likesCount: number
+  savesCount: number
+  sharesCount: number
+  viewsCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CmsProfile {
+  id: string
+  email: string
+  role: 'buyer' | 'seller' | 'admin'
+  name: string
+  username: string
+  avatarUrl: string
+  stylePreferences: Record<string, number>
+  occasionPreferences: Record<string, number>
+  ageRangePreferences: Record<string, number>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CmsFollow {
+  id: string
+  buyerUserId: string
+  sellerId: string
+  createdAt: string
+}
+
+export interface CmsSavedProduct {
+  id: string
+  buyerUserId: string
+  productId: string
+  createdAt: string
+}
+
+export interface CmsSavedPost {
+  id: string
+  buyerUserId: string
+  postId: string
+  createdAt: string
+}
+
+export interface CmsAnalyticsEvent {
+  id: string
+  userId: string
+  sellerId: string
+  productId: string
+  postId: string
+  eventName: string
+  source: string
+  metadata: Record<string, unknown>
+  createdAt: string
 }
 
 export interface CmsFeedItem {
@@ -101,8 +204,14 @@ export interface CmsState {
   categories: CmsCategory[]
   products: CmsProduct[]
   feedItems: CmsFeedItem[]
+  inspirationPosts: CmsInspirationPost[]
   leads: CmsLead[]
   media: { id: string; url: string; type: 'image' | 'video'; name: string; createdAt: string }[]
+  profiles: CmsProfile[]
+  follows: CmsFollow[]
+  savedProducts: CmsSavedProduct[]
+  savedPosts: CmsSavedPost[]
+  analyticsEvents: CmsAnalyticsEvent[]
 }
 
 const KEY = 'swipd-cms-state-v1'
@@ -115,8 +224,14 @@ export const emptyCmsState = (): CmsState => ({
   categories: [],
   products: [],
   feedItems: [],
+  inspirationPosts: [],
   leads: [],
   media: [],
+  profiles: [],
+  follows: [],
+  savedProducts: [],
+  savedPosts: [],
+  analyticsEvents: [],
 })
 
 const now = () => new Date().toISOString()
@@ -137,8 +252,7 @@ function safeJson<T>(value: string | null, fallback: T): T {
   }
 }
 
-export function loadCmsState(): CmsState {
-  const state = typeof localStorage === 'undefined' ? emptyCmsState() : safeJson(localStorage.getItem(KEY), emptyCmsState())
+function normalizeCmsState(state: Partial<CmsState>): CmsState {
   return {
     ...emptyCmsState(),
     ...state,
@@ -146,9 +260,20 @@ export function loadCmsState(): CmsState {
     categories: state.categories ?? [],
     products: state.products ?? [],
     feedItems: state.feedItems ?? [],
+    inspirationPosts: state.inspirationPosts ?? [],
     leads: state.leads ?? [],
     media: state.media ?? [],
+    profiles: state.profiles ?? [],
+    follows: state.follows ?? [],
+    savedProducts: state.savedProducts ?? [],
+    savedPosts: state.savedPosts ?? [],
+    analyticsEvents: state.analyticsEvents ?? [],
   }
+}
+
+export function loadCmsState(): CmsState {
+  const state = typeof localStorage === 'undefined' ? emptyCmsState() : safeJson(localStorage.getItem(KEY), emptyCmsState())
+  return normalizeCmsState(state)
 }
 
 export function saveCmsState(next: CmsState) {
@@ -163,8 +288,9 @@ function adminHeaders() {
 }
 
 async function applyRemoteState(state: CmsState) {
-  saveCmsState(state)
-  return state
+  const normalized = normalizeCmsState(state)
+  saveCmsState(normalized)
+  return normalized
 }
 
 async function requestCms(method: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown) {
@@ -186,7 +312,9 @@ export async function refreshCmsFromApi() {
   }
 }
 
-async function pushCmsItem(resource: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, item: unknown) {
+type CmsResource = keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'inspirationPosts' | 'leads' | 'profiles' | 'follows' | 'savedProducts' | 'savedPosts' | 'analyticsEvents'>
+
+async function pushCmsItem(resource: CmsResource, item: unknown) {
   try {
     const data = await requestCms('POST', { resource, item })
     if (data.state) await applyRemoteState(data.state)
@@ -195,7 +323,7 @@ async function pushCmsItem(resource: keyof Pick<CmsState, 'sellers' | 'categorie
   }
 }
 
-async function deleteCmsItem(resource: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, id: string) {
+async function deleteCmsItem(resource: CmsResource, id: string) {
   try {
     const data = await requestCms('DELETE', { resource, id })
     if (data.state) await applyRemoteState(data.state)
@@ -258,6 +386,8 @@ export function upsertSeller(input: Partial<CmsSeller> & { name: string; slug?: 
     const stamp = now()
     const seller: CmsSeller = {
       id: existing?.id ?? input.id ?? makeId('seller'),
+      ownerUserId: input.ownerUserId ?? existing?.ownerUserId ?? 'owner',
+      ownerEmail: input.ownerEmail ?? existing?.ownerEmail ?? '',
       name: input.name,
       slug: input.slug || slugify(input.name),
       description: input.description ?? existing?.description ?? '',
@@ -268,6 +398,7 @@ export function upsertSeller(input: Partial<CmsSeller> & { name: string; slug?: 
       logoUrl: input.logoUrl ?? existing?.logoUrl ?? '',
       coverUrl: input.coverUrl ?? existing?.coverUrl ?? '',
       isActive: input.isActive ?? existing?.isActive ?? true,
+      approvalStatus: input.approvalStatus ?? existing?.approvalStatus ?? 'approved',
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
@@ -319,6 +450,12 @@ export function upsertProduct(input: Partial<CmsProduct> & { title: string; sell
       sizes: input.sizes ?? existing?.sizes ?? ['XS-S', 'M-L'],
       tags: input.tags ?? existing?.tags ?? [],
       styleTags: input.styleTags ?? existing?.styleTags ?? ['casual'],
+      occasionTags: input.occasionTags ?? existing?.occasionTags ?? ['daily'],
+      ageRangeTags: input.ageRangeTags ?? existing?.ageRangeTags ?? ['25-34'],
+      gender: input.gender ?? existing?.gender ?? 'women',
+      seasonTags: input.seasonTags ?? existing?.seasonTags ?? ['all-season'],
+      fitTags: input.fitTags ?? existing?.fitTags ?? ['regular'],
+      priceSegment: input.priceSegment ?? existing?.priceSegment ?? 'middle',
       coverUrl: input.coverUrl ?? existing?.coverUrl ?? '',
       videoUrl: input.videoUrl ?? existing?.videoUrl ?? '',
       gallery: input.gallery ?? existing?.gallery ?? [],
@@ -364,7 +501,47 @@ export function upsertFeedItem(input: Partial<CmsFeedItem> & { productId: string
   return next
 }
 
-export function removeCmsItem(collection: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'leads'>, id: string) {
+export function upsertInspirationPost(input: Partial<CmsInspirationPost> & { sellerId: string; mediaUrls: string[] }) {
+  let saved: CmsInspirationPost | null = null
+  const next = updateCmsState((state) => {
+    const existing = input.id ? state.inspirationPosts.find((post) => post.id === input.id) : undefined
+    const stamp = now()
+    const post: CmsInspirationPost = {
+      id: existing?.id ?? input.id ?? makeId('post'),
+      sellerId: input.sellerId,
+      title: input.title ?? existing?.title ?? '',
+      caption: input.caption ?? existing?.caption ?? '',
+      contentType: input.contentType ?? existing?.contentType ?? 'outfit',
+      mediaType: input.mediaType ?? existing?.mediaType ?? (input.mediaUrls.length > 1 ? 'carousel' : /\.(mp4|mov|webm)$/i.test(input.mediaUrls[0] ?? '') ? 'video' : 'image'),
+      mediaUrls: input.mediaUrls,
+      coverUrl: input.coverUrl ?? existing?.coverUrl ?? input.mediaUrls[0] ?? '',
+      taggedProducts: input.taggedProducts ?? existing?.taggedProducts ?? [],
+      styleTags: input.styleTags ?? existing?.styleTags ?? ['casual'],
+      occasionTags: input.occasionTags ?? existing?.occasionTags ?? ['daily'],
+      ageRangeTags: input.ageRangeTags ?? existing?.ageRangeTags ?? ['25-34'],
+      gender: input.gender ?? existing?.gender ?? 'women',
+      seasonTags: input.seasonTags ?? existing?.seasonTags ?? ['all-season'],
+      isPinned: input.isPinned ?? existing?.isPinned ?? false,
+      pinnedOrder: Number(input.pinnedOrder ?? existing?.pinnedOrder ?? 0),
+      publishToDiscovery: input.publishToDiscovery ?? existing?.publishToDiscovery ?? false,
+      moderationStatus: input.moderationStatus ?? existing?.moderationStatus ?? (input.publishToDiscovery ? 'pending' : 'approved'),
+      status: input.status ?? existing?.status ?? 'draft',
+      sortOrder: Number(input.sortOrder ?? existing?.sortOrder ?? state.inspirationPosts.length),
+      likesCount: Number(input.likesCount ?? existing?.likesCount ?? 0),
+      savesCount: Number(input.savesCount ?? existing?.savesCount ?? 0),
+      sharesCount: Number(input.sharesCount ?? existing?.sharesCount ?? 0),
+      viewsCount: Number(input.viewsCount ?? existing?.viewsCount ?? 0),
+      createdAt: existing?.createdAt ?? stamp,
+      updatedAt: stamp,
+    }
+    saved = post
+    return { ...state, inspirationPosts: [post, ...state.inspirationPosts.filter((item) => item.id !== post.id)] }
+  })
+  if (saved) void pushCmsItem('inspirationPosts', saved)
+  return next
+}
+
+export function removeCmsItem(collection: keyof Pick<CmsState, 'sellers' | 'categories' | 'products' | 'feedItems' | 'inspirationPosts' | 'leads'>, id: string) {
   const next = updateCmsState((state) => ({ ...state, [collection]: (state[collection] as { id: string }[]).filter((item) => item.id !== id) }))
   void deleteCmsItem(collection, id)
   return next
@@ -394,6 +571,47 @@ export function addMedia(url: string, type: 'image' | 'video', name = '') {
   }))
 }
 
+export function trackCmsEvent(input: Partial<CmsAnalyticsEvent> & { eventName: string }) {
+  const event: CmsAnalyticsEvent = {
+    id: makeId('event'),
+    userId: input.userId ?? '',
+    sellerId: input.sellerId ?? '',
+    productId: input.productId ?? '',
+    postId: input.postId ?? '',
+    eventName: input.eventName,
+    source: input.source ?? '',
+    metadata: input.metadata ?? {},
+    createdAt: now(),
+  }
+  updateCmsState((state) => ({ ...state, analyticsEvents: [event, ...state.analyticsEvents].slice(0, 1000) }))
+  void pushCmsItem('analyticsEvents', event)
+  return event
+}
+
+export function toggleFollowSeller(sellerId: string, buyerUserId = 'me') {
+  return updateCmsState((state) => {
+    const exists = state.follows.some((follow) => follow.sellerId === sellerId && follow.buyerUserId === buyerUserId)
+    return {
+      ...state,
+      follows: exists
+        ? state.follows.filter((follow) => !(follow.sellerId === sellerId && follow.buyerUserId === buyerUserId))
+        : [{ id: makeId('follow'), sellerId, buyerUserId, createdAt: now() }, ...state.follows],
+    }
+  })
+}
+
+export function toggleSavedPost(postId: string, buyerUserId = 'me') {
+  return updateCmsState((state) => {
+    const exists = state.savedPosts.some((item) => item.postId === postId && item.buyerUserId === buyerUserId)
+    return {
+      ...state,
+      savedPosts: exists
+        ? state.savedPosts.filter((item) => !(item.postId === postId && item.buyerUserId === buyerUserId))
+        : [{ id: makeId('saved_post'), postId, buyerUserId, createdAt: now() }, ...state.savedPosts],
+    }
+  })
+}
+
 export function toRuntimeCatalog(state: CmsState) {
   const sellers = state.sellers.filter((seller) => seller.isActive)
   const categories = state.categories.filter((category) => category.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
@@ -402,12 +620,20 @@ export function toRuntimeCatalog(state: CmsState) {
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((product) => toRuntimeProduct(product, state))
     .filter(Boolean) as Product[]
+  const inspirationPosts = [
+    ...state.inspirationPosts,
+    ...state.feedItems.map((item) => legacyFeedToPost(item, state)).filter(Boolean) as CmsInspirationPost[],
+  ]
+    .filter((post) => post.status === 'published')
+    .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || a.pinnedOrder - b.pinnedOrder || a.sortOrder - b.sortOrder)
+    .map((post) => toRuntimePost(post, state))
+    .filter(Boolean) as InspirationPost[]
   const feed = state.feedItems
     .filter((item) => item.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((item) => toRuntimeFeedItem(item, state))
     .filter(Boolean) as FeedItem[]
-  return { sellers, categories, products, feed }
+  return { sellers, categories, products, feed, inspirationPosts }
 }
 
 function toRuntimeProduct(product: CmsProduct, state: CmsState): Product | null {
@@ -442,8 +668,59 @@ function toRuntimeProduct(product: CmsProduct, state: CmsState): Product | null 
     reviews: [],
     tags: product.tags,
     styleTags: product.styleTags,
+    occasionTags: product.occasionTags,
+    ageRangeTags: product.ageRangeTags,
+    gender: product.gender,
+    seasonTags: product.seasonTags,
+    fitTags: product.fitTags,
+    priceSegment: product.priceSegment || undefined,
     inStock: product.inStock,
     isActive: product.status === 'published',
+  }
+}
+
+function legacyFeedToPost(item: CmsFeedItem, state: CmsState): CmsInspirationPost | null {
+  const product = state.products.find((entry) => entry.id === item.productId)
+  if (!product) return null
+  return {
+    id: `legacy_${item.id}`,
+    sellerId: item.sellerId || product.sellerId,
+    title: item.title || product.title,
+    caption: item.subtitle || product.description,
+    contentType: 'outfit',
+    mediaType: item.type,
+    mediaUrls: [item.mediaUrl],
+    coverUrl: product.coverUrl || item.mediaUrl,
+    taggedProducts: [{ productId: product.id, sortOrder: 0 }],
+    styleTags: product.styleTags,
+    occasionTags: product.occasionTags ?? ['daily'],
+    ageRangeTags: product.ageRangeTags ?? ['25-34'],
+    gender: product.gender ?? 'women',
+    seasonTags: product.seasonTags ?? ['all-season'],
+    isPinned: false,
+    pinnedOrder: 0,
+    publishToDiscovery: true,
+    moderationStatus: 'approved',
+    status: item.isActive ? 'published' : 'hidden',
+    sortOrder: item.sortOrder,
+    likesCount: item.likesCount,
+    savesCount: 0,
+    sharesCount: item.sharesCount,
+    viewsCount: 0,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }
+}
+
+function toRuntimePost(post: CmsInspirationPost, state: CmsState): InspirationPost | null {
+  const seller = state.sellers.find((item) => item.id === post.sellerId && item.isActive)
+  if (!seller) return null
+  return {
+    ...post,
+    sellerName: seller.name,
+    sellerSlug: seller.slug,
+    sellerLogoUrl: seller.logoUrl,
+    sellerWhatsApp: seller.whatsapp,
   }
 }
 

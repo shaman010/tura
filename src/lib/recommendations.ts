@@ -1,16 +1,20 @@
-import type { FeedItem, Product, StylePreferences, StyleTag } from '../types'
+import type { FeedItem, InspirationPost, Product, StylePreferences, StyleTag } from '../types'
 
 export const STYLE_TAGS: StyleTag[] = [
   'minimal',
   'streetwear',
   'casual',
   'classic',
+  'evening',
   'sport',
   'korean',
   'luxury',
   'oversize',
   'feminine',
   'office',
+  'romantic',
+  'ethno',
+  'modest',
 ]
 
 export const STYLE_LABELS: Record<StyleTag, string> = {
@@ -18,19 +22,27 @@ export const STYLE_LABELS: Record<StyleTag, string> = {
   streetwear: 'Streetwear',
   casual: 'Casual',
   classic: 'Classic',
+  evening: 'Evening',
   sport: 'Sport',
   korean: 'Korean style',
   luxury: 'Luxury',
   oversize: 'Oversize',
   feminine: 'Feminine',
   office: 'Office',
+  romantic: 'Romantic',
+  ethno: 'Ethno',
+  modest: 'Modest',
 }
 
 // Веса сигналов из ТЗ §11
 export const WEIGHTS = {
-  like: 2,
+  view: 1,
+  like: 3,
   dislike: -2,
-  save: 4,
+  save: 3,
+  follow: 4,
+  taggedProductClick: 5,
+  whatsapp: 8,
   cart: 5,
   purchase: 8,
 } as const
@@ -61,7 +73,35 @@ function clamp(v: number, min: number, max: number) {
 
 /** Совпадение товара с предпочтениями пользователя — сумма весов его styleTags. */
 export function matchScore(prefs: StylePreferences, p: Product): number {
-  return p.styleTags.reduce((sum, t) => sum + (prefs[t] ?? 0), 0)
+  return [
+    ...p.styleTags,
+    ...(p.occasionTags ?? []),
+    ...(p.ageRangeTags ?? []),
+    ...(p.seasonTags ?? []),
+    ...(p.fitTags ?? []),
+    p.gender,
+    p.priceSegment,
+  ].filter(Boolean).reduce((sum, t) => sum + (prefs[t!] ?? 0), 0)
+}
+
+export function postMatchScore(prefs: StylePreferences, post: InspirationPost): number {
+  return [
+    ...post.styleTags,
+    ...post.occasionTags,
+    ...post.ageRangeTags,
+    ...post.seasonTags,
+    post.gender,
+  ].reduce((sum, tag) => sum + (prefs[tag] ?? 0), 0)
+}
+
+export function rankPosts(posts: InspirationPost[], prefs: StylePreferences, randomness = 8): InspirationPost[] {
+  const approved = posts.filter((post) => post.publishToDiscovery && post.moderationStatus === 'approved')
+  const experiments = posts.filter((post) => !approved.includes(post))
+  const scored = approved.map((post) => ({ post, score: postMatchScore(prefs, post) + (Math.random() - 0.5) * 2 * randomness }))
+  scored.sort((a, b) => b.score - a.score)
+  const main = scored.map((item) => item.post)
+  const everyTenth = experiments.filter((_, index) => index % 10 === 0)
+  return [...main, ...everyTenth]
 }
 
 /**

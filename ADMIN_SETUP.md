@@ -4,7 +4,14 @@
 
 Admin now uses Vercel API `/api/cms` for Cloudflare D1. If Cloudflare env variables are missing, the app falls back to localStorage so the site does not break.
 
-The D1 migration `migrations/0001_initial_schema.sql` was applied to `tura-db` on 2026-06-27.
+Apply both D1 migrations:
+
+```bash
+wrangler d1 execute tura-db --file=./migrations/0001_initial_schema.sql --remote
+wrangler d1 execute tura-db --file=./migrations/0002_seller_first_social_commerce.sql --remote
+```
+
+`0002_seller_first_social_commerce.sql` adds Seller Studio, Inspiration posts, tagged products, follows/saves, and analytics events.
 
 Add these variables in Vercel Project Settings -> Environments -> Production:
 
@@ -98,22 +105,19 @@ image max 5MB
 video max 100MB
 ```
 
-## Как добавить первый товар
+## Как проверить seller-first flow
 
 1. Откройте `/admin`.
 2. Войдите с `ADMIN_PASSWORD`.
-3. Создайте продавца.
+3. Создайте продавца и заполните WhatsApp.
 4. Создайте категорию.
-5. Создайте товар:
-   - seller
-   - category
-   - title
-   - price
-   - cover image URL из R2/CDN
-   - status `published`
-   - in stock `true`
-6. Создайте feed item и привяжите его к товару.
-7. Откройте главную страницу: item появится в Discovery, товар появится в Search.
+5. Создайте товар и загрузите обложку прямо из формы товара.
+6. Откройте раздел `Вдохновение`, создайте образ, загрузите фото/видео и отметьте товары.
+7. Поставьте post status `published`, `Публиковать в Discovery`, moderation `approved`.
+8. Откройте `/`, `/search`, `/seller/:slug`, `/post/:id`, `/product/:id`.
+9. На товаре нажмите `Написать в WhatsApp`: должен открыться чат продавца с готовым сообщением.
+
+Продавец может делать то же самое из `/studio`: добавить товар, загрузить медиа, создать образ и отметить свои товары.
 
 ## Future Worker API
 

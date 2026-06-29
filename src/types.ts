@@ -3,12 +3,48 @@ export type StyleTag =
   | 'streetwear'
   | 'casual'
   | 'classic'
+  | 'evening'
   | 'sport'
   | 'korean'
   | 'luxury'
   | 'oversize'
   | 'feminine'
   | 'office'
+  | 'romantic'
+  | 'ethno'
+  | 'modest'
+
+export type OccasionTag =
+  | 'daily'
+  | 'office'
+  | 'evening'
+  | 'event'
+  | 'walk'
+  | 'travel'
+  | 'home'
+  | 'vacation'
+  | 'wedding_guest'
+  | 'holiday'
+
+export type AgeRangeTag = '18-24' | '25-34' | '35-44' | '45-54' | '55+'
+export type GenderTag = 'women' | 'men' | 'unisex'
+export type SeasonTag = 'spring' | 'summer' | 'autumn' | 'winter' | 'all-season'
+export type FitTag = 'slim' | 'regular' | 'loose' | 'oversize' | 'wide' | 'high-waist' | 'straight'
+export type PriceSegment = 'budget' | 'middle' | 'premium'
+export type ProductStatus = 'draft' | 'published' | 'hidden' | 'out_of_stock' | 'archived'
+export type ModerationStatus = 'pending' | 'approved' | 'rejected' | 'hidden'
+export type InspirationStatus = 'draft' | 'published' | 'hidden' | 'archived'
+export type InspirationMediaType = 'image' | 'video' | 'carousel'
+export type InspirationContentType =
+  | 'outfit'
+  | 'try_on_video'
+  | 'lookbook'
+  | 'size_tip'
+  | 'fabric_story'
+  | 'announcement'
+  | 'sale'
+  | 'new_collection'
+  | 'behind_scenes'
 
 export type Category =
   | 'Новинки'
@@ -60,8 +96,54 @@ export interface Product {
   reviews: Review[]
   tags: string[]
   styleTags: StyleTag[]
+  occasionTags?: OccasionTag[]
+  ageRangeTags?: AgeRangeTag[]
+  gender?: GenderTag
+  seasonTags?: SeasonTag[]
+  fitTags?: FitTag[]
+  priceSegment?: PriceSegment
   inStock: boolean
   isActive?: boolean
+}
+
+export interface TaggedProduct {
+  productId: string
+  x?: number
+  y?: number
+  sortOrder?: number
+}
+
+export interface InspirationPost {
+  id: string
+  sellerId: string
+  sellerName: string
+  sellerSlug: string
+  sellerLogoUrl?: string
+  sellerWhatsApp?: string
+  title?: string
+  caption?: string
+  contentType: InspirationContentType
+  mediaType: InspirationMediaType
+  mediaUrls: string[]
+  coverUrl?: string
+  taggedProducts: TaggedProduct[]
+  styleTags: StyleTag[]
+  occasionTags: OccasionTag[]
+  ageRangeTags: AgeRangeTag[]
+  gender: GenderTag
+  seasonTags: SeasonTag[]
+  isPinned: boolean
+  pinnedOrder?: number
+  publishToDiscovery: boolean
+  moderationStatus: ModerationStatus
+  status: InspirationStatus
+  sortOrder: number
+  likesCount: number
+  savesCount: number
+  sharesCount: number
+  viewsCount: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface FeedItem {
@@ -135,9 +217,9 @@ export interface Lead {
 export type OrderStatus = LeadStatus
 export type Order = Lead
 
-export type StylePreferences = Record<StyleTag, number>
+export type StylePreferences = Partial<Record<StyleTag | OccasionTag | AgeRangeTag | GenderTag | SeasonTag | FitTag | PriceSegment, number>>
 
-export type UserRole = 'buyer' | 'seller'
+export type UserRole = 'buyer' | 'seller' | 'admin'
 
 export interface UserProfile {
   id: string
@@ -151,7 +233,14 @@ export interface UserProfile {
   sizes: Sizes
   addresses: Address[]
   stylePreferences: StylePreferences
+  occasionPreferences?: StylePreferences
+  ageRangePreferences?: StylePreferences
   likedProducts: string[]
+  savedPosts: string[]
+  followedSellerIds: string[]
+  recentProductIds: string[]
+  recentPostIds: string[]
+  whatsappClicks: { productId?: string; postId?: string; sellerId?: string; createdAt: number }[]
   dislikedProducts: string[]
   savedProducts: string[]
   subscribedBrands: string[]

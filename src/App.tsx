@@ -10,7 +10,9 @@ import { Checkout } from './screens/Checkout'
 import { Seller } from './screens/Seller'
 import { PublicSellerPage } from './screens/PublicSellerPage'
 import { PublicProductPage } from './screens/PublicProductPage'
+import { PublicPostPage } from './screens/PublicPostPage'
 import { Admin } from './screens/Admin'
+import { Studio } from './screens/Studio'
 import { BottomNav } from './components/BottomNav'
 import { ProductDetail } from './components/ProductDetail'
 import { BrandStore } from './components/BrandStore'
@@ -57,7 +59,9 @@ export default function App() {
   const path = window.location.pathname
   const sellerMatch = path.match(/^\/seller\/([^/]+)/)
   const productMatch = path.match(/^\/product\/([^/]+)/)
+  const postMatch = path.match(/^\/post\/([^/]+)/)
   const adminMatch = path.match(/^\/admin/)
+  const studioMatch = path.match(/^\/studio/)
 
   // Восстановить сессию Supabase при загрузке (если бэкенд подключён).
   useEffect(() => {
@@ -89,12 +93,15 @@ export default function App() {
   }, [overlayKey])
 
   if (adminMatch) return <Admin />
+  if (studioMatch) return <Studio />
 
-  if (sellerMatch || productMatch) {
+  if (sellerMatch || productMatch || postMatch) {
     return (
       <div className="relative h-[100dvh] w-full max-w-[480px] overflow-hidden bg-base text-ink shadow-2xl">
         {sellerMatch ? (
           <PublicSellerPage slug={decodeURIComponent(sellerMatch[1])} />
+        ) : postMatch ? (
+          <PublicPostPage id={decodeURIComponent(postMatch[1])} />
         ) : (
           <PublicProductPage id={decodeURIComponent(productMatch![1])} />
         )}

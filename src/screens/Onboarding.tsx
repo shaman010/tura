@@ -7,7 +7,7 @@ import { STYLE_LABELS, STYLE_TAGS } from '../lib/recommendations'
 import { track } from '../lib/analytics'
 import type { StyleTag, Fit } from '../types'
 
-const STYLE_IMAGES: Record<StyleTag, string> = {
+const STYLE_IMAGES: Partial<Record<StyleTag, string>> = {
   minimal: '1485462537746-965f33f7f6a7',
   streetwear: '1556905055-8f358a7a47b2',
   casual: '1521572163474-6864f9cf17ab',
@@ -18,9 +18,13 @@ const STYLE_IMAGES: Record<StyleTag, string> = {
   oversize: '1620799140408-edc6dcb6d633',
   feminine: '1490481651871-ab68de25d43d',
   office: '1594938298603-c8148c4dae35',
+  evening: '1515886657613-9f3515b0c78f',
+  romantic: '1496747611176-843222e1e57c',
+  ethno: '1529139574466-a303027c1d8b',
+  modest: '1509631179647-0177331693ae',
 }
 const styleImg = (t: StyleTag) =>
-  `https://images.unsplash.com/photo-${STYLE_IMAGES[t]}?w=400&q=75&auto=format&fit=crop`
+  `https://images.unsplash.com/photo-${STYLE_IMAGES[t] ?? STYLE_IMAGES.casual}?w=400&q=75&auto=format&fit=crop`
 
 export function Onboarding() {
   const complete = useStore((s) => s.completeOnboarding)
